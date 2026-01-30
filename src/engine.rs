@@ -217,46 +217,106 @@ impl InferenceEngine {
         let mut tokens = prompt.to_vec();
         let mut generated = Vec::new();
 
-        for _ in 0..max_tokens {
+        debug!("Starting generation with {} prompt tokens", tokens.len());
+
+        for i in 0..max_tokens {
             let input_len = tokens.len();
             if input_len >= self.max_seq_len {
+                debug!("Reached max sequence length");
                 break;
             }
 
-            // Prepare input tensor (add batch dim)
-            let input = Tensor::new(tokens.as_slice(), &self.device)?.unsqueeze(0)?;
+            // For the first pass, use all tokens. For subsequent passes, only use the last token
+            let input_tokens = if i == 0 {
+                &tokens[..]
+            } else {
+                &tokens[tokens.len() - 1..]
+            };
 
-            // Forward pass - quantized Phi3 takes input and position offset
-            let seqlen_offset = tokens.len().saturating_sub(1);
+            // Prepare input tensor (add batch dim)
+            let input = Tensor::new(input_tokens, &self.device)?.unsqueeze(0)?;
+            debug!("Input tensor shape: {:?}", input.dims());
+
+            // Forward pass - seqlen_offset is the position of the first token in the input
+            let seqlen_offset = if i == 0 {
+                0  // First pass: process from beginning
+            } else {
+                tokens.len() - 1  // Subsequent passes: continue from last position
+            };
+            
+            debug!("Forward pass iteration {}, seqlen_offset: {}, input_tokens: {}", 
+                   i, seqlen_offset, input_tokens.len());
+            
             let logits = model.forward(&input, seqlen_offset)?;
+            debug!("Output logits shape: {:?}", logits.dims());
 
             // Sample next token
             let next_token = self.sample_token(&logits, temperature)?;
+            debug!("Generated token: {}", next_token);
+            
             tokens.push(next_token);
             generated.push(next_token);
 
             // Check for EOS token
-            if next_token == 0 || next_token == 2 {
+            if next_token == 0 || next_token == 2 || next_token == 32000 {
+                debug!("EOS token detected: {}", next_token);
                 break;
             }
         }
 
+        debug!("Generation complete: {} tokens generated", generated.len());
         Ok(generated)
     }
 
     fn sample_token(&self, logits: &Tensor, temperature: f64) -> Result<u32> {
+        // Convert to F32 for processing
         let logits = logits.to_dtype(DType::F32)?;
-        let last_logits = logits.i((.., logits.dim(1)? - 1, ..))?;
         
-        let logits = if temperature > 0.0 {
-            (&last_logits / temperature)?
+        // Debug: print shape
+        debug!("Logits shape: {:?}", logits.dims());
+        
+        // Handle different possible shapes:
+        // Could be [batch, seq_len, vocab] or [batch, vocab] or [vocab]
+        let last_logits = match logits.dims().len() {
+            3 => {
+                // [batch, seq_len, vocab] - get last token
+                let seq_len = logits.dim(1)?;
+                logits.i((.., seq_len - 1, ..))?
+            }
+            2 => {
+                // [batch, vocab] - already at last token
+                logits.clone()
+            }
+            1 => {
+                // [vocab] - already flattened
+                logits.clone()
+            }
+            _ => {
+                return Err(anyhow::anyhow!("Unexpected logits shape: {:?}", logits.dims()));
+            }
+        };
+        
+        // Squeeze to get [vocab_size]
+        let last_logits = last_logits.squeeze(0)?;
+        
+        debug!("Last logits shape after squeeze: {:?}", last_logits.dims());
+        
+        // Apply temperature
+        let scaled_logits = if temperature > 0.0 && temperature != 1.0 {
+            (last_logits / temperature)?
         } else {
             last_logits
         };
 
-        // Apply softmax
-        let probs = candle_nn::ops::softmax_last_dim(&logits)?;
+        // Apply softmax - ensure we have a 1D tensor
+        let probs = candle_nn::ops::softmax(&scaled_logits, 0)?;
         let probs_vec: Vec<f32> = probs.to_vec1()?;
+        
+        debug!("Vocab size: {}", probs_vec.len());
+        
+        if probs_vec.is_empty() {
+            return Err(anyhow::anyhow!("Empty probability distribution"));
+        }
         
         // Simple argmax sampling
         let mut max_idx = 0;
@@ -268,6 +328,7 @@ impl InferenceEngine {
             }
         }
 
+        debug!("Sampled token: {} (prob: {})", max_idx, max_val);
         Ok(max_idx as u32)
     }
 

@@ -1,0 +1,11 @@
+/Users/garysibanda/ai-systems-2025/target/release/deps/ug_metal-edc9b509ec92a638.d: /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/lib.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/code_gen.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/runtime.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/utils.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/mlx_gemm.metal
+
+/Users/garysibanda/ai-systems-2025/target/release/deps/libug_metal-edc9b509ec92a638.rlib: /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/lib.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/code_gen.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/runtime.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/utils.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/mlx_gemm.metal
+
+/Users/garysibanda/ai-systems-2025/target/release/deps/libug_metal-edc9b509ec92a638.rmeta: /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/lib.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/code_gen.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/runtime.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/utils.rs /Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/mlx_gemm.metal
+
+/Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/lib.rs:
+/Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/code_gen.rs:
+/Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/runtime.rs:
+/Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/utils.rs:
+/Users/garysibanda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ug-metal-0.5.0/src/mlx_gemm.metal:
