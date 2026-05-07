@@ -1,4 +1,7 @@
-use prometheus::{HistogramVec, IntCounterVec, IntGauge, register_histogram_vec, register_int_counter_vec, register_int_gauge};
+use prometheus::{
+    register_histogram_vec, register_int_counter_vec, register_int_gauge, HistogramVec,
+    IntCounterVec, IntGauge,
+};
 
 lazy_static::lazy_static! {
     pub static ref TOKENS_PER_SECOND: HistogramVec = register_histogram_vec!(
@@ -48,7 +51,9 @@ pub fn init_metrics() {
 }
 
 pub fn record_tokens_per_second(model: &str, tokens: f64) {
-    TOKENS_PER_SECOND.with_label_values(&[model]).observe(tokens);
+    TOKENS_PER_SECOND
+        .with_label_values(&[model])
+        .observe(tokens);
 }
 
 pub fn record_request_latency(endpoint: &str, status: &str, latency: f64) {

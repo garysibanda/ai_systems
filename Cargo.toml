@@ -18,11 +18,12 @@ tracing             = "0.1"
 tracing-subscriber  = { version = "0.3", features = ["env-filter", "fmt"] }
 anyhow              = "1.0"
 parking_lot = "0.12.5"
-dashmap = "6.1.0"
 tower-http = { version = "0.6", features = ["cors"] }
+tower = { version = "0.5", features = ["limit", "util"] }
 tokenizers = "0.22.2"
 uuid = { version = "1.20.0", features = ["v4"] }
 lazy_static = "1.5.0"
+rand = "0.8"
 
 [profile.release]
 opt-level = 3

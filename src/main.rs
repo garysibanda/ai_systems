@@ -1,19 +1,19 @@
 use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
-use tracing::{info, error};
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 mod engine;
-mod server;
 mod metrics;
+mod server;
 
-use engine::InferenceEngine;
-use server::InferenceServer;
+use engine::{EngineApi, InferenceEngine};
+use server::{InferenceServer, ServerConfig};
 
 #[derive(Parser, Debug)]
 #[command(name = "llm-inference-server")]
-#[command(about = "High-performance LLM inference server with continuous batching")]
+#[command(about = "Rust LLM inference server with OpenAI-compatible HTTP endpoints")]
 struct Args {
     /// Path to GGUF model file
     #[arg(long, default_value = "")]
@@ -40,16 +40,16 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Initialize tracing
-    // let filter = if args.verbose {
-    //     "llm_inference_server=debug,tower_http=debug"
-    // } else {
-    //     "llm_inference_server=info"
-    // };
+    let default_filter = if args.verbose {
+        "llm_inference_server=debug,tower_http=debug"
+    } else {
+        "llm_inference_server=info"
+    };
 
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter)),
+        )
         .init();
 
     if args.model.is_empty() {
@@ -63,25 +63,20 @@ async fn main() -> Result<()> {
     info!("Max batch size: {}", args.max_batch_size);
     info!("Max sequence length: {}", args.max_seq_len);
 
-    // Initialize metrics
     metrics::init_metrics();
 
-    // Initialize inference engine
-    let engine = Arc::new(
-        InferenceEngine::new(
-            &args.model,
-            args.max_batch_size,
-            args.max_seq_len,
-        )
-        .await?,
-    );
+    let server_config = ServerConfig::from_env()?;
+
+    let engine =
+        Arc::new(InferenceEngine::new(&args.model, args.max_batch_size, args.max_seq_len).await?);
+    engine.clone().start_batch_processor();
+
+    let engine_for_server: Arc<dyn EngineApi> = engine;
 
     info!("Model loaded successfully");
 
-    // Start the server
-    let server = InferenceServer::new(engine, args.port);
+    let server = InferenceServer::new(engine_for_server, args.port, server_config);
     server.run().await?;
 
     Ok(())
 }
-

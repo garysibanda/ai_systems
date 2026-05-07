@@ -1,88 +1,103 @@
 # LLM Inference Server
 
-A high-performance, production-ready LLM inference server built in Rust using Candle. Features continuous batching, paged attention KV cache, and OpenAI-compatible REST API.
+`llm-inference-server` is a Rust HTTP service that loads a local GGUF model through Candle's quantized Phi-3 path and exposes OpenAI-style `/v1/completions` and `/v1/chat/completions` endpoints. The implementation is intentionally small: Axum handles the API surface, a Tokio task drains an in-memory request queue every 10ms, and generation runs inside a single-process inference engine with Prometheus metrics, API-key auth, rate limiting, and CORS.
 
 ## Features
 
-- **Async inference server** using Tokio runtime
-- **GGUF model loading** from disk at startup
-- **Continuous batching** for efficient request processing
-- **Paged attention KV cache** for memory-efficient caching
-- **OpenAI-compatible API** (`/v1/chat/completions` and `/v1/completions`)
-- **Prometheus metrics** (`/metrics`) with tokens/second, latency, queue depth, GPU utilization
-- **Metal GPU backend** enabled by default for Apple Silicon
-- **Optimized performance** targeting 2-3× faster than candle-examples/quantized
+- Local GGUF model loading at startup with Metal GPU fallback to CPU
+- OpenAI-compatible `POST /v1/completions` and `POST /v1/chat/completions` endpoints
+- Async request batching queue with a fixed `10ms` drain cadence and `max_batch_size` cap
+- Temperature and top-p sampling, plus greedy decoding when `temperature <= 0`
+- Bearer-token API-key middleware, enabled unless `DEV_MODE=true`
+- Fixed-window in-memory rate limiting via `RATE_LIMIT_RPS`
+- Configurable CORS allowlist
+- Prometheus metrics exported from `/metrics`
 
-## Requirements
+## Stack
+
+Rust, Axum, Tokio, candle-core / candle-transformers (Hugging Face Candle), Prometheus, tower-http
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Client["Client"] --> CORS["CORS layer"]
+    CORS --> Auth["API key middleware"]
+    Auth --> Rate["Fixed-window rate limiter"]
+    Rate --> Routes["Axum routes"]
+    Routes --> Queue["In-memory request queue"]
+    Queue --> Worker["Tokio batch worker (10ms interval)"]
+    Worker --> Engine["Inference engine"]
+    Engine --> Model["Quantized Phi-3 GGUF model"]
+    Engine --> Tokenizer["tokenizer.json"]
+    Metrics["Prometheus scraper"] -->|GET /metrics| Routes
+```
+
+## Getting started
+
+### Requirements
 
 - Rust 1.70+ (edition 2021)
-- macOS with Apple Silicon (M1/M2/M3) for Metal GPU support
-- GGUF model file (e.g., Llama, Mistral, etc.)
-- Tokenizer file (`tokenizer.json`) in the same directory as the model (optional, will fallback if not found)
+- A local GGUF model file compatible with Candle's quantized Phi-3 loader
+- `tokenizer.json` in the same directory as the model file
+- Apple Silicon is optional; if Metal is unavailable, the server falls back to CPU
 
-## Installation
+### Build
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd ai-systems-2025
-
-# Build in release mode for optimal performance
 cargo build --release
 ```
 
-## Usage
+### Run
 
-### Basic Usage
-
-```bash
-./target/release/llm-inference-server \
-    --model /path/to/model.gguf \
-    --port 8000 \
-    --max-batch-size 32 \
-    --max-seq-len 4096
-```
-
-### CLI Options
-
-- `--model <path>`: Path to GGUF model file (required)
-- `--port <number>`: Server port (default: 8000)
-- `--max-batch-size <number>`: Maximum batch size (default: 32)
-- `--max-seq-len <number>`: Maximum sequence length (default: 4096)
-- `--verbose`: Enable verbose logging
-
-### Example
+Set either `DEV_MODE=true` for local development or provide an API key with `LLM_API_KEY`.
 
 ```bash
-./target/release/llm-inference-server \
-    --model ~/models/llama-7b-q4_0.gguf \
-    --port 8000 \
-    --max-batch-size 32 \
-    --max-seq-len 4096
+DEV_MODE=true ./target/release/llm-inference-server \
+  --model /path/to/model.gguf \
+  --port 8000 \
+  --max-batch-size 32 \
+  --max-seq-len 4096
 ```
 
-## API Endpoints
+### CLI flags
 
-### Health Check
+- `--model <path>`: required model path
+- `--port <number>`: server port, default `8000`
+- `--max-batch-size <number>`: queue drain cap per tick, default `32`
+- `--max-seq-len <number>`: maximum sequence length, default `4096`
+- `--verbose`: enables debug logging
+
+### Environment variables
+
+- `DEV_MODE=true|false`: bypasses API-key checks when true
+- `LLM_API_KEY=<token>`: required unless `DEV_MODE=true`
+- `CORS_ALLOWED_ORIGINS=http://localhost:3000,...`: comma-separated allowlist
+- `RATE_LIMIT_RPS=<positive integer>`: fixed-window request limit, default `60`
+
+## API reference
+
+### Health check
 
 ```bash
 curl http://localhost:8000/health
 ```
 
 Response:
+
 ```json
 {
   "status": "healthy"
 }
 ```
 
-### Chat Completions
+### Chat completions
 
 ```bash
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "llama-7b",
+    "model": "local-model",
     "messages": [
       {"role": "user", "content": "Hello, how are you?"}
     ],
@@ -98,10 +113,11 @@ curl http://localhost:8000/v1/chat/completions \
 curl http://localhost:8000/v1/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "llama-7b",
+    "model": "local-model",
     "prompt": "The capital of France is",
     "max_tokens": 50,
-    "temperature": 0.7
+    "temperature": 0.7,
+    "top_p": 0.9
   }'
 ```
 
@@ -111,146 +127,56 @@ curl http://localhost:8000/v1/completions \
 curl http://localhost:8000/metrics
 ```
 
-The metrics endpoint exposes Prometheus-formatted metrics including:
+Registered metrics:
 
-- `tokens_per_second`: Tokens generated per second
-- `request_latency_seconds`: Request latency (p50, p99 available via histogram)
-- `queue_depth`: Number of requests waiting in queue
-- `gpu_utilization_percent`: GPU utilization percentage
-- `requests_total`: Total number of requests by endpoint and status
-- `tokens_generated_total`: Total tokens generated
+- `tokens_per_second`
+- `request_latency_seconds`
+- `queue_depth`
+- `gpu_utilization_percent`
+- `requests_total`
+- `tokens_generated_total`
 
-## Benchmarking
+### Benchmarking
 
-### Performance Testing
-
-To benchmark the server performance, you can use tools like `ab` (Apache Bench) or `wrk`:
+Run benchmarking commands on your hardware and model to measure actual throughput and latency:
 
 ```bash
-# Install wrk (if not already installed)
-brew install wrk
-
-# Run benchmark
-wrk -t4 -c100 -d30s -s benchmark.lua http://localhost:8000/v1/chat/completions
+ab -n 100 -c 8 -p request.json -T application/json http://127.0.0.1:8000/v1/completions
 ```
 
-Create a `benchmark.lua` file:
+Example `request.json`:
 
-```lua
-wrk.method = "POST"
-wrk.headers["Content-Type"] = "application/json"
-wrk.body = '{"model":"test","messages":[{"role":"user","content":"Hello"}],"max_tokens":50}'
+```json
+{
+  "model": "local-model",
+  "prompt": "Hello",
+  "max_tokens": 32,
+  "temperature": 0.0,
+  "top_p": 1.0
+}
 ```
 
-### Comparing with candle-examples
+## Tests
 
-To compare performance with `candle-examples/quantized`:
+Current `cargo test` summary:
 
-1. Run the baseline from candle-examples:
-   ```bash
-   cd candle-examples
-   cargo run --example quantized --release -- --model /path/to/model.gguf
-   ```
-
-2. Run this server:
-   ```bash
-   ./target/release/llm-inference-server --model /path/to/model.gguf
-   ```
-
-3. Use the same prompt and measure tokens/second
-
-### Performance Metrics
-
-Record the following metrics:
-
-- **Tokens per second**: Measure throughput
-- **Latency (p50, p99)**: Measure response time percentiles
-- **GPU utilization**: Monitor GPU usage
-- **Queue depth**: Monitor request queuing
-
-## Performance Table
-
-| Metric | Value | Notes |
-|--------|-------|-------|
-| Tokens/second | _TBD_ | Measured on M-series Mac |
-| Latency (p50) | _TBD_ | 50th percentile |
-| Latency (p99) | _TBD_ | 99th percentile |
-| GPU Utilization | _TBD_ | Average during load |
-| Batch Size | 32 | Configurable via CLI |
-
-_Note: Fill in actual benchmark results after testing on your hardware._
-
-## Architecture
-
-### Components
-
-- **`main.rs`**: Entry point, CLI parsing, server initialization
-- **`server.rs`**: Axum web server with OpenAI-compatible endpoints
-- **`engine.rs`**: Inference engine with continuous batching and KV cache
-- **`metrics.rs`**: Prometheus metrics collection and export
-
-### Key Optimizations
-
-1. **Continuous Batching**: Requests are batched together for efficient GPU utilization
-2. **Paged KV Cache**: Memory-efficient caching of attention key-value pairs
-3. **Async Processing**: Non-blocking request handling with Tokio
-4. **Metal GPU**: Native Apple Silicon acceleration
-5. **Optimized Build**: Release mode with LTO and codegen optimizations
-
-## Development
-
-### Building
-
-```bash
-# Debug build
-cargo build
-
-# Release build (optimized)
-cargo build --release
+```text
+running 9 tests
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
-### Running Tests
+The tests cover:
 
-```bash
-cargo test
-```
+- `/health` and `/metrics` endpoint wiring
+- `/v1/completions` success and over-limit prompt rejection paths
+- bearer-token parsing
+- timestamp generation
+- top-p filtering and argmax sampling helpers
 
-### Code Structure
+## Design decisions
 
-```
-src/
-├── main.rs      # CLI and initialization
-├── server.rs    # HTTP server and API endpoints
-├── engine.rs    # Inference engine and batching
-└── metrics.rs   # Prometheus metrics
-```
-
-## Troubleshooting
-
-### Metal Device Not Available
-
-If you see "Metal device not available", the server will fall back to CPU. Ensure you're running on Apple Silicon (M1/M2/M3) with Metal support.
-
-### Model Loading Errors
-
-- Ensure the GGUF file path is correct
-- Check that the model format is supported (Llama architecture is assumed)
-- Verify file permissions
-
-### Tokenizer Not Found
-
-The server will attempt to load `tokenizer.json` from the same directory as the model. If not found, it will use a fallback tokenizer. For best results, include the tokenizer file.
-
-### Out of Memory
-
-- Reduce `--max-batch-size`
-- Reduce `--max-seq-len`
-- Use a smaller quantized model (e.g., Q4_0 instead of F32)
+Rust keeps the server runtime small and gives explicit control over concurrency, ownership, and failure handling around model execution. The batching mechanism is a fixed-cadence queue rather than dynamic in-flight batching: it is simpler to reason about, but it adds queueing delay and does not merge partially completed sequences. Rate limiting is implemented as a process-local fixed window because it is easy to audit and has no external dependency, at the cost of rougher boundaries than a token bucket. The server is intentionally single-process and in-memory, which keeps the code legible for a portfolio review but means scaling and multi-tenant concerns are left to a future architecture.
 
 ## License
 
-[Add your license here]
-
-## Contributing
-
-[Add contribution guidelines here]
+MIT
