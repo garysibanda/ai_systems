@@ -4,10 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-candle-core         = { git = "https://github.com/huggingface/candle.git", features = ["metal"] }
-candle-nn           = { git = "https://github.com/huggingface/candle.git", features = ["metal"] }
-candle-transformers = { git = "https://github.com/huggingface/candle.git", features = ["metal"] }
-
 tokio               = { version = "1", features = ["full"] }
 axum                = "0.7"
 clap                = { version = "4", features = ["derive"] }
@@ -24,6 +20,16 @@ tokenizers = "0.22.2"
 uuid = { version = "1.20.0", features = ["v4"] }
 lazy_static = "1.5.0"
 rand = "0.8"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+candle-core         = { git = "https://github.com/huggingface/candle.git", features = ["metal"] }
+candle-nn           = { git = "https://github.com/huggingface/candle.git", features = ["metal"] }
+candle-transformers = { git = "https://github.com/huggingface/candle.git", features = ["metal"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+candle-core         = { git = "https://github.com/huggingface/candle.git" }
+candle-nn           = { git = "https://github.com/huggingface/candle.git" }
+candle-transformers = { git = "https://github.com/huggingface/candle.git" }
 
 [profile.release]
 opt-level = 3

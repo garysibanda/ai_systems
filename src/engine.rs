@@ -6,7 +6,10 @@ use rand::distributions::{Distribution, WeightedIndex};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokenizers::Tokenizer;
-use tracing::{debug, warn};
+use tracing::debug;
+
+#[cfg(target_os = "macos")]
+use tracing::warn;
 
 use crate::metrics;
 
@@ -56,10 +59,7 @@ impl EngineApi for InferenceEngine {
 
 impl InferenceEngine {
     pub async fn new(model_path: &str, max_batch_size: usize, max_seq_len: usize) -> Result<Self> {
-        let device = Device::new_metal(0).unwrap_or_else(|_| {
-            warn!("Metal device not available, falling back to CPU");
-            Device::Cpu
-        });
+        let device = load_device();
 
         debug!("Loading model from: {}", model_path);
 
@@ -301,6 +301,19 @@ impl InferenceEngine {
             }
         });
     }
+}
+
+#[cfg(target_os = "macos")]
+fn load_device() -> Device {
+    Device::new_metal(0).unwrap_or_else(|_| {
+        warn!("Metal device not available, falling back to CPU");
+        Device::Cpu
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn load_device() -> Device {
+    Device::Cpu
 }
 
 fn argmax_index(values: &[f32]) -> Result<usize> {
