@@ -6,10 +6,7 @@ use rand::distributions::{Distribution, WeightedIndex};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokenizers::Tokenizer;
-use tracing::debug;
-
-#[cfg(target_os = "macos")]
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::metrics;
 
