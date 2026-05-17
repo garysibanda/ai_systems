@@ -16,6 +16,7 @@
 ## Stack
 
 Rust, Axum, Tokio, candle-core / candle-transformers (Hugging Face Candle), Prometheus, tower-http
+Model: Phi-3 (quantized GGUF via Hugging Face Candle, Metal GPU with CPU fallback)
 
 ## Architecture
 
@@ -41,6 +42,7 @@ flowchart LR
 - A local GGUF model file compatible with Candle's quantized Phi-3 loader
 - `tokenizer.json` in the same directory as the model file
 - Apple Silicon is optional; if Metal is unavailable, the server falls back to CPU
+- Download a Phi-3 GGUF model from Hugging Face (e.g., microsoft/Phi-3-mini-4k-instruct-gguf) and place tokenizer.json in the same directory.
 
 ### Build
 
@@ -158,14 +160,12 @@ Example `request.json`:
 
 ## Tests
 
-Current `cargo test` summary:
+All 9 tests pass. Coverage spans endpoint wiring, inference path correctness, and middleware behavior:
 
 ```text
 running 9 tests
 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
-
-The tests cover:
 
 - `/health` and `/metrics` endpoint wiring
 - `/v1/completions` success and over-limit prompt rejection paths
